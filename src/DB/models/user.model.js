@@ -2,7 +2,10 @@
 
 import mongoose,{Schema,model,Types} from "mongoose";
 
-
+export const defaultProfilePicture={
+    public_id:"images_ljluef",
+    secure_url:"https://res.cloudinary.com/dgfgn9gln/image/upload/v1738713828/images_ljluef.png"
+}
 export const genderType={male:"male",female:"female"};
 export const roleType={User:"User",Admin:"Admin"};
 const userSchema=new Schema({
@@ -27,8 +30,18 @@ const userSchema=new Schema({
     phone:String,
     address:String,
     DOB:Date,
-    image:String,
-    coverImage:[String],
+    // image:String,
+    image:{
+        public_id:{
+            type:String,
+            default:defaultProfilePicture.public_id
+        },
+        secure_url:{
+            type:String,
+            default:defaultProfilePicture.secure_url
+        }
+    },
+    coverImages:[String],
     gender:{
         type:String,
         enum:Object.values(genderType),

@@ -1,11 +1,13 @@
-import UserModel from "../../DB/models/user.model.js";
+import UserModel, { defaultProfilePicture } from "../../DB/models/user.model.js";
 import { resetPasswordEvent, sendEmailTypes, updateEmailEvent } from "../../utils/email/eventEmail.js";
 import { sendEmailTemplate } from "../../utils/email/generateHTML.js";
 import generateOTP from "../../utils/generateOTP.js";
 import { compareHash, hash } from "../../utils/hashing/hashing.js";
 import * as dataBaseService from "../../DB/dbService.js"
 import { decrypt, encrypt } from "../../utils/encryption/encryption.js";
-
+import path from "path";
+import fs from "fs";
+import cloudinary from "../../utils/uploads/cloudinary_config.js";
 
 export const getSingleUser=async(req,res,next)=>{
     
@@ -29,19 +31,16 @@ export const changePassword=async(req,res,next)=>{
     if(!compareHash(oldPassword,user.password))return next(new Error("wrong password",{cause:409}));
     if(compareHash(password,user.password))return res.status(200).json({message:"Done"});
     const hashedPassword=hash(password);
-    //await UserModel.updateOne({_id:user._id},{$set:{password:hashedPassword}});
     await dataBaseService.updateOne({model:UserModel,filter:{_id:user._id},data:{$set:{password:hashedPassword}}});
 
     return res.status(200).json({message:"Done"});
 }
 export const forgetPasswordSendEmail=async(req,res,next)=>{
     const{email}=req.body;
-    //const user=await UserModel.findOne({email});
     const user=await dataBaseService.findOne({model:UserModel,filter:{email}});
     if(!user)return next(new Error("User not found",{cause:404}));
     const otp=generateOTP();
     const hashedOTP=hash(otp);
-   // await UserModel.updateOne({email},{$set:{OTPs:{createdAt:new Date(),resetPasswordOTP:hashedOTP}}});
     await dataBaseService.updateOne({model:UserModel,filter:{email},data:{$set:{OTPs:{createdAt:new Date(),resetPasswordOTP:hashedOTP}}}});
 
     
@@ -125,4 +124,68 @@ export const updateProfile=async(req,res,next)=>{
     const user=await dataBaseService.findByIdAndUpdate({model:UserModel,id:req.user._id,data:{$set:{userName,phone:encryptedPhone}}});
      if(!user)return next(new Error("User not found",{cause:404}));
      return res.status(200).json({message:"Done"});
+}
+
+export const uploadProfileImage=async(req,res,next)=>{
+    const imagePath=req.file.path;
+    
+    const user=await dataBaseService.findByIdAndUpdate({model:UserModel,id:req.user._id,data:{image:imagePath}});
+    if(!user)return next(new Error("User not found",{cause:404}));
+    return res.status(200).json({message:"Done",});
+}
+export const uploadCoverImages=async(req,res,next)=>{
+    const user=await dataBaseService.findById({model:UserModel,id:req.user._id});
+    if(!user)return next(new Error("User not found",{cause:404}));
+    user.coverImages=req.files.map((file)=>file.path);
+    await user.save();
+
+    return res.status(200).json({message:"Done"});
+}
+
+// export const deleteProfilePicture=async(req,res,next)=>{
+//     const user=await dataBaseService.findById({model:UserModel,id:req.user._id});
+//     if(!user)return next(new Error("User not found",{cause:404}));
+//     if(!user.image){
+//         return res.status(200).json({message:"user has no profile picture"});
+//     }
+//     fs.unlinkSync(path.resolve(user.image));
+    
+//     user.image=null;
+//     await user.save();
+//     return res.status(200).json({message:"Done"});
+
+// }
+export const deleteCoverImage=async(req,res,next)=>{
+   const {index}=req.params;
+   const user=await dataBaseService.findById({model:UserModel,id:req.user._id});
+   if(!user)return next(new Error("User not found",{cause:404}));
+   if(user.coverImages.length<=index||user.coverImages.length==0)
+    return next(new Error("Cover image not found or in valid index",{cause:404}));
+   fs.unlinkSync(path.resolve(user.coverImages[index]));
+   user.coverImages.splice(index,1);
+   await user.save();
+   return res.status(200).json({message:"Done"});
+}
+
+export const uploadProfileImageToCloud=async(req,res,next)=>{
+   const user=await dataBaseService.findById({model:UserModel,id:req.user._id});
+   if(!user)return next(new Error("User not found",{cause:404}));
+
+   const{public_id,secure_url}=await cloudinary.uploader.upload(req.file.path,{folder:`users/profile_images/${req.user._id}`});
+   user.image={public_id,secure_url};
+   await user.save();
+   return res.status(200).json({message:"Done"});
+}
+
+export const deleteProfilePicture=async(req,res,next)=>{
+    const user=await dataBaseService.findById({model:UserModel,id:req.user._id});
+    if(!user)return next(new Error("User not found",{cause:404}));
+
+    const results=await cloudinary.uploader.destroy(user.image.public_id);
+    if(results.result==="ok"){
+        user.image={public_id:defaultProfilePicture.public_id,secure_url:defaultProfilePicture.secure_url};
+        await user.save();
+    }
+    return res.status(200).json({message:"Done"});
+
 }
